@@ -300,6 +300,7 @@ async def upload_func(event):
     base.buffer[0:h,0:w,:]+=arr
     #base.buffer[yo:yo+h,xo:xo+w,0:3]=arr[:,:,0:3]
     #base.buffer[yo:yo+h,xo:xo+w,-1]=arr[:,:,-1]
+    print("run upload func ~~~~~~~") # change by andy
     base.draw_buffer()
     if len(event.data)>2:
         history.append(base.save())

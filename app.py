@@ -7,6 +7,8 @@ import numpy as np
 import torch
 from torch import autocast
 import diffusers
+from diffusers import AutoPipelineForInpainting
+
 
 assert tuple(map(int,diffusers.__version__.split(".")))  >= (0,9,0), "Please upgrade diffusers to 0.9.0"
 
@@ -54,6 +56,7 @@ RUN_IN_SPACE = "RUN_IN_HG_SPACE" in os.environ
 class ModelChoice(Enum):
     INPAINTING = "stablediffusion-inpainting"
     INPAINTING2 = "stablediffusion-2-inpainting"
+    INPAINTINGXL = "stablediffusion-xl-inpainting"
     INPAINTING_IMG2IMG = "stablediffusion-inpainting+img2img-1.5"
     MODEL_2_1 = "stablediffusion-2.1"
     MODEL_2_0_V = "stablediffusion-2.0v"
@@ -291,6 +294,7 @@ class StableDiffusionInpaint:
                     model_name = os.path.dirname(model_path)
                 else:
                     model_name = model_path
+            print("~~~~~~~~~~model_name",model_name)
             vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse")
             if device == "cuda" and not args.fp32:
                 vae.to(torch.float16)
@@ -311,14 +315,15 @@ class StableDiffusionInpaint:
                     feature_extractor=pipe.feature_extractor,
                 )
             else:
-                print(f"Loading {model_name}")
+                print(f"Loading {model_name},{args.fp32}")
                 if device == "cuda" and not args.fp32:
-                    inpaint = StableDiffusionInpaintPipeline.from_pretrained(
+                    inpaint = AutoPipelineForInpainting.from_pretrained(  #inpaint = StableDiffusionInpaintPipeline.from_pretrained(
+                    # inpaint = StableDiffusionInpaintPipeline.from_pretrained(
                         model_name,
                         revision="fp16",
                         torch_dtype=torch.float16,
                         use_auth_token=token,
-                        vae=vae,
+                        # vae=vae,
                     )
                 else:
                     inpaint = StableDiffusionInpaintPipeline.from_pretrained(
@@ -360,7 +365,7 @@ class StableDiffusionInpaint:
         scheduler_dict["DPM"] = prepare_scheduler(
             DPMSolverMultistepScheduler.from_config(inpaint.scheduler.config)
         )
-        self.safety_checker = inpaint.safety_checker
+        # self.safety_checker = inpaint.safety_checker # change by andy
         save_token(token)
         try:
             total_memory = torch.cuda.get_device_properties(0).total_memory // (
@@ -395,11 +400,14 @@ class StableDiffusionInpaint:
         inpaint = self.inpaint
         selected_scheduler = scheduler_dict.get(scheduler, scheduler_dict["PLMS"])
         for item in [inpaint]:
+            print(f"item:{item}")
             item.scheduler = selected_scheduler
             if enable_safety or self.safety_checker is None:
-                item.safety_checker = self.safety_checker
+                if hasattr(item, "safety_checker"):
+                    item.safety_checker = self.safety_checker
             else:
-                item.safety_checker = lambda images, **kwargs: (images, False)
+                if hasattr(item, "safety_checker"):
+                    item.safety_checker = lambda images, **kwargs: (images, False)
         width, height = image_pil.size
         sel_buffer = np.array(image_pil)
         img = sel_buffer[:, :, 0:3]
@@ -411,6 +419,9 @@ class StableDiffusionInpaint:
             process_width, process_height = my_resize(width, height)
         process_width = process_width * 8 // 8
         process_height = process_height * 8 // 8
+
+        process_width = 1024
+        process_height = 1024
         extra_kwargs = {
             "num_inference_steps": step,
             "guidance_scale": guidance_scale,
@@ -434,8 +445,10 @@ class StableDiffusionInpaint:
                 mask = mask.repeat(8, axis=0).repeat(8, axis=1)
             # extra_kwargs["strength"] = strength
             inpaint_func = inpaint
-            init_image = Image.fromarray(img)
+            init_image = Image.fromarray(img) # 将数据元素转换成图像对象
             mask_image = Image.fromarray(mask)
+            init_image.save("init_image.png")
+            mask_image.save("mask_image.png")
             # mask_image=mask_image.filter(ImageFilter.GaussianBlur(radius = 8))
             if True:
                 images = inpaint_func(
@@ -795,6 +808,12 @@ def get_model(token="", model_choice="", model_path=""):
             tmp = StableDiffusionInpaint(
                 token=token, model_name=model_name, model_path=model_path
             )
+        elif model_choice == ModelChoice.INPAINTINGXL.value:
+            if len(model_name) < 1:
+                model_name = "diffusers/stable-diffusion-xl-1.0-inpainting-0.1"
+            print(f"Using [{model_name}] {model_path}")
+            tmp = StableDiffusionInpaint(token=token, model_name=model_name, model_path=model_path)
+            # tmp = AutoPipelineForInpainting.from_pretrained(model_name, torch_dtype=torch.float16, variant="fp16") 
         elif model_choice == ModelChoice.INPAINTING_IMG2IMG.value:
             print(
                 f"Note that {ModelChoice.INPAINTING_IMG2IMG.value} only support remote model and requires larger vRAM"
@@ -883,6 +902,7 @@ def run_outpaint(
         height=height,
     )
     base64_str_lst = []
+    out_picture_lst = []
     if enable_img2img:
         use_correction = "border_mode"
     for image in images:
@@ -892,6 +912,7 @@ def run_outpaint(
         out[:, :, 0:3] = np.array(resized_img)
         out[:, :, -1] = 255
         out_pil = Image.fromarray(out)
+        out_picture_lst.append(out_pil)
         out_buffer = io.BytesIO()
         out_pil.save(out_buffer, format="PNG")
         out_buffer.seek(0)
@@ -902,6 +923,8 @@ def run_outpaint(
         gr.update(label=str(state + 1), value=",".join(base64_str_lst),),
         gr.update(label="Prompt"),
         state + 1,
+        gr.update(value=out_picture_lst,columns=3),
+
     )
 
 
@@ -1091,6 +1114,8 @@ with blocks as demo:
     model_output_state = gr.State(value=0)
     upload_output_state = gr.State(value=0)
     cancel_button = gr.Button("Cancel", elem_id="cancel", visible=False)
+    pictures = gr.Gallery(value=[], columns=4,rows =1)
+
     if not RUN_IN_SPACE:
 
         def setup_func(token_val, width, height, size, model_choice, model_path):
@@ -1167,7 +1192,7 @@ with blocks as demo:
             interrogate_check,
             model_output_state,
         ],
-        outputs=[model_output, sd_prompt, model_output_state],
+        outputs=[model_output, sd_prompt, model_output_state,pictures],
         _js=proceed_button_js,
     )
     # cancel button can also remove error overlay

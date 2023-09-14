@@ -11,7 +11,7 @@ Outpainting with Stable Diffusion on an infinite canvas.
 https://user-images.githubusercontent.com/1665437/197244111-51884b3b-dffe-4dcf-a82a-fa5117c79934.mp4
 
 ## Status
-
+you can use **stable-diffusion-xl-1.0-inpainting-0.1** for infinity expension painting
 Powered by Stable Diffusion inpainting model, this project now works well. However, the quality of results is still not guaranteed.
 You may need to do prompt engineering, change the size of the selection, reduce the size of the outpainting region to get better outpainting results. 
 
@@ -42,6 +42,10 @@ Update: the project add photometric correction to suppress seams, to use this fe
   - The iframe and the gradio are in the same origin. For `postMessage` version, check out [gradio-space](https://github.com/lkwq007/stablediffusion-infinity/tree/gradio-space) version
 
 ### Known issues
+
+need install 
+pip install transformers==4.33.1
+pip install gradio==3.40.0
 
 - The canvas is implemented with `NumPy` + `PyScript` (the project was originally implemented with `ipycanvas` inside a jupyter notebook), which is relatively inefficient compared with pure frontend solutions. 
 - By design, the canvas is infinite. However, the canvas size is **finite** in practice. Your RAM and browser limit the canvas size. The canvas might crash or behave strangely when zoomed out by a certain scale. 

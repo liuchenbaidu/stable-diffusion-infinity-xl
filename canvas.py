@@ -473,7 +473,8 @@ class InfCanvas:
 
     def draw_buffer(self):
         self.canvas[1].clear()
-        self.canvas[1].put_image_data(self.buffer, 0, 0)
+        print("run in here draw_buffer")
+        self.canvas[1].put_image_data(self.buffer, 0, 0) # change by andy
 
     def fill_selection(self, img):
         self.sel_buffer = img
